@@ -135,8 +135,6 @@ def init_state():
         st.session_state.raw_blueprint = {}
     if 'flat_blueprint' not in st.session_state:
         st.session_state.flat_blueprint = {}
-    if 'saved_personas' not in st.session_state:
-        st.session_state.saved_personas = []
     if 'selected_persona_id' not in st.session_state:
         st.session_state.selected_persona_id = None
 
@@ -163,14 +161,16 @@ def run_ai_analysis(jd_text):
 
 def save_current_persona():
     new_persona = st.session_state.flat_blueprint.copy()
-    new_persona['id'] = str(uuid.uuid4())
-    new_persona['created_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    st.session_state.saved_personas.append(new_persona)
-    st.session_state.selected_persona_id = new_persona['id']
-    
-    title = new_persona.get("job_title", "Untitled Role")
-    st.toast(f"Persona '{title}' saved successfully!", icon="✅")
+
+    persona_id = storage.save_persona(new_persona)
+
+    st.session_state.selected_persona_id = persona_id
+
+    st.toast(
+        f"Persona '{new_persona.get('job_title','Untitled')}' saved successfully!",
+        icon="✅"
+    )
+
     set_step(3)
 
 def u_val(field_obj, default=""):
@@ -213,7 +213,7 @@ def render_header():
     with c1:
         st.markdown("#### Create Hiring Request")
     with c2:
-        st.metric("Saved Personas", len(st.session_state.saved_personas))
+        st.metric("Saved Personas", len(storage.load_personas()))
     
     cols = st.columns(3)
     steps = [
@@ -269,7 +269,7 @@ def render_step1():
                 run_ai_analysis(jd_content)
                 st.rerun()
     with c2:
-        if st.session_state.saved_personas:
+        if storage.load_personas():
             if st.button("Skip to Upload (Use Existing Persona)", use_container_width=True):
                 set_step(3)
                 st.rerun()
@@ -419,7 +419,9 @@ def render_step2():
 def render_step3():
     st.markdown("### Select Persona & Upload Resumes")
     
-    if not st.session_state.saved_personas:
+    saved_personas = storage.load_personas()
+
+    if not saved_personas:
         st.warning("No Hiring Personas saved yet. Please go back to Step 1 to create one.")
         if st.button("← Back to Step 1"):
             set_step(1)
@@ -429,7 +431,7 @@ def render_step3():
     st.markdown("#### 1. Select Hiring Persona")
     
     persona_options = {}
-    for p in reversed(st.session_state.saved_personas): 
+    for p in saved_personas: 
         display_name = f"{p.get('job_title', 'Role')} ({p.get('location', 'Loc')}) - {p['created_at']}"
         persona_options[display_name] = p['id']
         
@@ -447,7 +449,9 @@ def render_step3():
     )
     
     st.session_state.selected_persona_id = persona_options[selected_display]
-    active_p = next(p for p in st.session_state.saved_personas if p['id'] == st.session_state.selected_persona_id)
+    active_p = storage.load_persona(
+        st.session_state.selected_persona_id
+    )
     
     with st.expander(f"📌 Active Profile Summary: {active_p.get('job_title', 'Untitled')}", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
@@ -487,7 +491,9 @@ def render_bottom_actions():
     with c3:
         if st.session_state.step == 3:
             if st.button("🚀 Start AI Resume Matching", type="primary", use_container_width=True):
-                active_p = next(p for p in st.session_state.saved_personas if p['id'] == st.session_state.selected_persona_id)
+                active_p = storage.load_persona(
+                    st.session_state.selected_persona_id
+                )
                 title = active_p.get("job_title", "Role")
                 st.success(f"Starting vector matching engine for {title}! Navigating to results...")
                 st.balloons()
